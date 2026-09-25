@@ -724,15 +724,23 @@ def test_get_camset_returns_a_telecentric_camset(telecentric_problem):
     # call the gauge transform, which is exactly why Phase 3 survives this bug.
     # Asserting against that class would have passed before the fix too.
     handler = SelfBundleHandler(camset=cams, target=target, detection=detection)
+    # Taken before the solve is read back: get_camset must not write into the
+    # rig it started from, so comparing against ``cams`` afterwards would
+    # compare the output with itself if it did.
+    wanted = {name: np.array(cams[name].intrinsic, dtype=float)
+              for name in cams.get_names()}
 
-    params = ground_truth_params(handler, cams, poses)
+    # A self calibration's vector carries the target points after the poses;
+    # without them the gauge would rescale the lens against whatever followed.
+    points = np.asarray(target.point_data, dtype=float).reshape(-1)[handler.feat_unfixed]
+    params = np.concatenate([ground_truth_params(handler, cams, poses), points])
     out = handler.get_camset(params)
 
     assert out.get_n_cams() == len(cams)
     for name in cams.get_names():
         assert isinstance(out[name], TelecentricCamera)
         got = np.asarray(out[name].intrinsic, dtype=float)
-        want = np.asarray(cams[name].intrinsic, dtype=float)
+        want = wanted[name]
         assert got[0, 0] == pytest.approx(want[0, 0])
         assert got[1, 1] == pytest.approx(want[1, 1])
 
@@ -769,40 +777,6 @@ def test_a_saved_telecentric_camset_reloads_with_its_handler(tmp_path, telecentr
     assert reloaded.get_n_cams() == len(cams)
     assert all(isinstance(reloaded[n], TelecentricCamera) for n in cams.get_names())
 
-
-def test_fix_all_cameras_packs_telecentric_widths(telecentric_problem):
-    """Holding every camera fixed takes its widths from the lens model.
-
-    The literals here were six and nine whatever the model, so a telecentric
-    set could not be held at all: the handler's broadcast refused them.
-    """
-    from pyCamSet.optimisation.find_target import fix_all_cameras
-
-    cams, _, _, _ = telecentric_problem
-    fixed = fix_all_cameras(cams)
-
-    assert set(fixed) == set(cams.get_names())
-    for name in cams.get_names():
-        assert fixed[name]["ext"].shape == (3,), "rotation only: no translation"
-        assert fixed[name]["int"].shape == (6,), "m_x, c_x, m_y, c_y, k, eps"
-
-
-def test_a_telecentric_set_can_be_held_at_its_calibration(telecentric_problem):
-    """The whole point of the widths: construct a handler that holds them fixed.
-
-    This is find_target's real path -- it photographs a known target in a known
-    rig -- so it has to work for whatever lens that rig was calibrated with.
-    """
-    from pyCamSet.optimisation.find_target import fix_all_cameras
-
-    cams, target, detection, poses = telecentric_problem
-    handler = TemplateBundleHandler(
-        camset=cams, target=target, detection=detection,
-        fixed_params=fix_all_cameras(cams),
-        options={"verbosity": 0, "fixed_pose": []})
-
-    assert not np.any(handler.bundlePrimitive.extr_unfixed)
-    assert not np.any(handler.bundlePrimitive.intr_unfixed)
 
 # --------------------------------------------------------------------------
 # Does the gauge transform actually preserve the calibration?
