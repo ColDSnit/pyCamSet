@@ -181,7 +181,6 @@ def test_ccube2_faces_have_disjoint_marker_ids() -> None:
     assert cube.face_ids == [list(range(k * 16, (k + 1) * 16)) for k in range(6)]
 
 
-
 @pytest.mark.parametrize("values,refused", [
     ({"n_points": 1}, "at least 2x2"),
     ({"length": 0.0}, "has an edge length"),
