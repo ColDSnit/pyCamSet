@@ -82,6 +82,18 @@ def _run_key(run: Optional[dict]) -> Optional[tuple]:
         return None
 
 
+#: Workers still running, held here rather than by their panel: a QThread
+#: destroyed while running aborts the process, and a panel can be destroyed
+#: (its tab closed, the window shut) while one is computing.
+_RUNNING: set = set()
+
+
+def _join_running_workers() -> None:
+    """Wait for every diagnostics worker before the application exits."""
+    for worker in list(_RUNNING):
+        worker.wait()
+
+
 class _DiagnosticsWorker(QThread):
     """Load a camset and compute its assessment diagnostics off the GUI thread."""
 
@@ -338,10 +350,20 @@ class AssessCalibrationPanel(QWidget):
             return
         self.figure_status.setText("Computing the assessment…")
         self.figure_grid.set_widgets([])
-        self._worker = _DiagnosticsWorker(self._key, self)
-        self._worker.ready.connect(self._on_ready)
-        self._worker.failed.connect(self._on_failed)
-        self._worker.start()
+        # Unparented and held in _RUNNING until it finishes, so closing the
+        # panel cannot destroy a running thread; the results only reach a
+        # panel that still exists (see _on_ready).
+        worker = _DiagnosticsWorker(self._key)
+        _RUNNING.add(worker)
+        worker.finished.connect(lambda w=worker: _RUNNING.discard(w))
+        worker.ready.connect(self._on_ready)
+        worker.failed.connect(self._on_failed)
+        application = QApplication.instance()
+        if application is not None and not application.property("pycamsetJoinsWorkers"):
+            application.aboutToQuit.connect(_join_running_workers)
+            application.setProperty("pycamsetJoinsWorkers", True)
+        self._worker = worker
+        worker.start()
 
     def _load_if_needed(self) -> None:
         if self._key is not None and self._diagnostics_key != self._key and self.isVisible():

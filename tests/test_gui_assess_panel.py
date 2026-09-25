@@ -177,3 +177,33 @@ def test_both_diagnostics_tabs_use_the_shared_panel(qapp, tmp_path, monkeypatch)
         window.close()
         window.deleteLater()
         qapp.processEvents()
+
+
+def test_closing_the_page_mid_assessment_leaves_the_worker_to_finish(qapp, tmp_path, monkeypatch):
+    """A running diagnostics thread must outlive its panel, not be destroyed with it."""
+    import threading
+
+    from pyCamSet.gui import assess_panel
+
+    monkeypatch.setenv("PYCAMSET_CONFIG_DIR", str(tmp_path / "config"))
+    gate = threading.Event()
+
+    def slow_run(worker):
+        gate.wait(5)
+        worker.ready.emit(worker._key, object())
+
+    monkeypatch.setattr(assess_panel._DiagnosticsWorker, "run", slow_run)
+    run = _run(tmp_path, "slow")
+    panel = assess_panel.AssessCalibrationPanel("phase3", lambda: run)
+    panel.set_run(run)
+    panel.show()
+    worker = panel._worker
+    assert worker is not None and worker.isRunning() and worker.parent() is None
+    panel.close()
+    panel.deleteLater()
+    qapp.processEvents()  # the panel is gone; the thread is not
+    gate.set()
+    worker.wait(5000)
+    for _ in range(20):
+        qapp.processEvents()
+    assert worker not in assess_panel._RUNNING

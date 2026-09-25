@@ -68,21 +68,6 @@ def delete_file(path: Path | str) -> None:
         pass
 
 
-def delete_file(path: Path | str) -> None:
-    """Remove *path* if it is there, long Windows paths included.
-
-    A no-op, not an error, when *path* is already gone -- callers use this to
-    make sure a stale file (e.g. a cache's identity sidecar that must never
-    end up paired with a different cache) is absent, not to report whether
-    one was found.
-    """
-    target = _extended(path) if os.name == "nt" else str(Path(path))
-    try:
-        os.remove(target)
-    except FileNotFoundError:
-        pass
-
-
 def ensure_directory(path: Path | str) -> None:
     """Create *path* and any missing parents."""
     os.makedirs(long_path(path), exist_ok=True)
