@@ -172,13 +172,6 @@ class TemplateBundleHandler:
         intr_unfixed = np.array(['int' not in self.fixed_params.get(cam_name, {}) for cam_name in self.cam_names])
         pose_unfixed = np.ones(n_poses, dtype=bool)
 
-        # A pose that no camera detected the target in has nothing to estimate
-        # it from. Every residual that would mention it is simply absent, so
-        # its six parameters reach the jacobian as all-zero columns and the
-        # degeneracy check refuses to solve at all -- which costs the whole
-        # calibration for the sake of one frame where the target was blurred,
-        # or had left every view. Such a pose is fixed at the identity rather
-        # than left free, so the frame is what is lost, not the run.
         seen = detection.get_data()
         if seen is not None and len(seen):
             unseen = np.setdiff1d(np.arange(n_poses), np.unique(seen[:, 1].astype(int)))
@@ -594,10 +587,6 @@ class TemplateBundleHandler:
         cam_poses, target_poses, per_im_error = estimate_camera_relative_poses(
             detection=self.detection, cams=self.camset, calibration_target=self.target
         )
-        # Kept, not just consumed: phase 3 and phase 4 both report this as the
-        # per-image initial reprojection, and the diagnostics tab builds its
-        # threshold and its remove-these-images control on top of it. Computed
-        # and dropped, every one of those read an empty array and drew nothing.
         self.initial_per_im_error = np.asarray(per_im_error, dtype=float)
 
         unposed = np.array([np.isnan(t[0, 0]) for t in target_poses])

@@ -392,8 +392,7 @@ def _detect(params: dict, log: LogFn) -> tuple[object, list, dict, dict]:
         if root != f_loc and caching:
             # The cache lands beside the images the pass read, i.e. the
             # staging folder -- bring it back to the image folder, where a
-            # rerun of this same subset looks for it. Purely a speed-up for
-            # a LATER run: this call's own
+            # rerun of this same subset looks for it. Purely a speed-up for a LATER run: this call's own
             # (detections, cam_res) below are already final and returned
             # regardless of whether this copy-back succeeds, so the whole
             # thing is best-effort -- any failure here is logged and

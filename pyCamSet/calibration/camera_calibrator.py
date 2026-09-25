@@ -303,7 +303,6 @@ def run_stereo_calibration(
     return optimised_cams
 
 
-
 def detect_datapoints_in_imfile(
     f_loc: Path,
     calibration_target: AbstractTarget,
@@ -334,13 +333,6 @@ def detect_datapoints_in_imfile(
         fixed before any staging decision), so a folder appearing in or
         vanishing from *f_loc* afterwards cannot join or leave the pass.
         ``None`` scans *f_loc* here instead.
-    :param rescale_and_gamma: preprocess with a rescale-and-gamma pass
-        before detecting (pcube's low-contrast, low-resolution imagery)
-        rather than plain upscaling
-    :param preprocessing_scale: the rescale factor when *rescale_and_gamma*
-        is set
-    :param preprocessing_gamma: the gamma correction when *rescale_and_gamma*
-        is set
     :return: A target detection.
     """
 
@@ -352,9 +344,6 @@ def detect_datapoints_in_imfile(
     scan_cam_names = cam_names is None
     cam_names = get_subfolder_names(f_loc=f_loc) if scan_cam_names else list(cam_names)
 
-    # Folded into the cache identity (not the cache name) so switching this
-    # setting invalidates a stale slot instead of silently reading detections
-    # made under a different preprocessing pass.
     preprocessing = None
     if rescale_and_gamma:
         preprocessing = {
@@ -407,11 +396,8 @@ def detect_datapoints_in_imfile(
         detections = [work_fn(file) for file in tqdm(detected_sub_folders)]
     detected = reduce(lambda x, y: x + y, detections)
 
-    # cam_res must reflect the upscaled coordinate frame, not native.
-    # When upscale_factor > 1, detected 2D pixel coords are in the upscaled
-    # frame, so cam_res must match. Multiply native .shape[:2] by the factor
-    # (cheaper than re-reading the image and resizing it). A rescale-and-gamma
-    # pass does not change the coordinate frame the way upscaling does.
+    # Detected coordinates are in the upscaled frame, so cam_res must be too:
+    # scaling the native shape is cheaper than re-reading and resizing.
     coordinate_scale = 1 if rescale_and_gamma else upscale_factor
     cam_res = [tuple(int(d * coordinate_scale) for d in cv2.imread(str(glob_ims(f_loc/cname)[0])).shape[:2]) for cname in cam_names]
 

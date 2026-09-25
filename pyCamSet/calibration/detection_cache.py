@@ -79,11 +79,6 @@ def _target_identity(calibration_target, cam_names: list[str],
 
     None -- always a miss, and nothing written -- for a detection biased by
     a camset, which is not fingerprinted, or for an unregistered target.
-
-    :param preprocessing: the image preprocessing a pass applied before
-        detecting (e.g. pcube's rescale-and-gamma settings), when there is
-        any. Folded into the identity so a slot detected under one
-        preprocessing setting is never handed back for another.
     """
     if camset is not None:
         return None

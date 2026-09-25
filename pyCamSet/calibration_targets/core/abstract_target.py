@@ -98,85 +98,52 @@ def _looks_like_native_opencv_error(exc: BaseException) -> bool:
 
 
 def _prepare_detection_image(
-    image: np.ndarray,
-    *,
-    rescale_and_gamma: bool,
-    preprocessing_scale: float,
-    preprocessing_gamma: float,
+    image: np.ndarray, *, rescale_and_gamma: bool,
+    preprocessing_scale: float, preprocessing_gamma: float,
 ) -> tuple[np.ndarray, float]:
-    """Prepare one image and return it with the coordinate scale used."""
+    """Prepare an optional PuzzleBoard image and return its scale."""
     if not rescale_and_gamma:
         return image, 1.0
     from pyCamSet.calibration_targets.markers.puzzleboard import (
         preprocess_puzzleboard_image,
     )
-    prepared = preprocess_puzzleboard_image(
+    return preprocess_puzzleboard_image(
         image, enabled=True, scale=preprocessing_scale,
-        gamma=preprocessing_gamma)
-    return prepared, float(preprocessing_scale)
+        gamma=preprocessing_gamma), float(preprocessing_scale)
 
 
 def _restore_native_coordinates(detection: ImageDetection, scale: float) -> ImageDetection:
-    """Map detector points back to native pixels without changing point IDs."""
-    if scale == 1.0 or not detection.has_data:
-        return detection
-    detection.image_points = np.asarray(detection.image_points, dtype=np.float64) / scale
+    """Map detector points back to the native image coordinate system."""
+    if scale != 1.0 and detection.has_data:
+        detection.image_points = np.asarray(
+            detection.image_points, dtype=np.float64) / scale
     return detection
 
 
 def _process_image(
     im_file: Path, cam_name: str, idx: int, draw: bool, camera: Camera,
     upscale_factor: int = 1, rescale_and_gamma: bool = False,
-    preprocessing_scale: float = 0.25, preprocessing_gamma: float = 0.5,
-):
+    preprocessing_scale: float = 0.25, preprocessing_gamma: float = 0.5):
     """
-    Helper function to process a single image.
+    Detect one image, in a worker process.
 
-    ``cv2.imread`` does not raise on an unreadable or undecodable file; it
-    returns ``None``. That is checked explicitly, before anything is done
-    with the array, so a corrupt file is a per-image failure rather than an
-    ``AttributeError``/``TypeError`` out of ``resize`` or ``find_in_image``
-    (which would not be isolated and would abort the Pool). Beyond that,
-    ``cv2.error`` is caught here, matching ``find_in_imfolder``'s
-    single-process path below, and so is a ``ValueError`` that looks like a
-    native OpenCV assertion (see :func:`_looks_like_native_opencv_error`) --
-    aruco2's grid-board detector can hand the SAME rare, OpenCV-internal
-    failure (see the module docstring-adjacent note on ``find_in_imfolder``)
-    back as either exception type. Either way it must not lose the rest of
-    the Pool's ``starmap``, so the image is reported back as having no
-    detections instead of raising out of the worker. Any other exception --
-    including a ``ValueError`` that does not have that native-OpenCV shape --
-    is a programming error and is left to propagate, which aborts the Pool
-    the same way it always did. The caller does the logging, once all the
-    workers' results are in hand, rather than each worker logging on its
-    own -- worker process log records do not reach the main process.
+    Failures that belong to one image are returned rather than raised, so
+    they cannot abort the Pool: an undecodable file (``cv2.imread`` returns
+    None rather than raising), a ``cv2.error``, and a ``ValueError`` shaped
+    like a native OpenCV assertion, which is how aruco2's detector reports
+    the same failure. Anything else is a programming error and propagates.
 
-    The fifth element of the return tuple (``unreadable``) tells the caller
-    which of the two isolated failure kinds ``error`` describes: a file
-    ``cv2.imread`` could not decode at all, versus a ``cv2.error`` raised by
-    detection itself. The caller (the ``Pool`` aggregator in
-    ``find_in_imfolder``) needs this to format the same message the
-    single-process path below uses, instead of nesting a pre-formatted
-    "could not read image ..." sentence inside a second "detection failed
-    ..." wrapper.
+    Nothing is logged here -- a worker's log records never reach the main
+    process, so the caller logs once it has every result.
 
-    The sixth element of the return tuple carries the same idea for a
-    target's own legacy-pattern-mismatch warning (round-2 review, P1):
-    ``worker_detector.find_in_image`` may call ``logger.warning`` on its own
-    (e.g. ChArUco's/Ccube's ``_warn_legacy_once``), but that call runs in
-    THIS worker process and its log record never reaches the main process
-    either -- there is no log-forwarding set up between them. A target that
-    supports this stashes the fired message on its own
-    ``legacy_warning_message`` attribute (None until/unless it fires); read
-    back here and handed to the main process alongside the detection, so
-    ``find_in_imfolder`` can log it once there. A target with no such
-    attribute (most targets) simply reports None, unchanged from before.
+    :return: cam_name, idx, the detection, what went wrong, whether the file
+        was unreadable, and any warning the target stashed on
+        ``legacy_warning_message`` for the caller to log
     """
     im = cv2.imread(
         im_file, cv2.IMREAD_UNCHANGED if rescale_and_gamma else cv2.IMREAD_COLOR)
     if im is None:
         return cam_name, idx, ImageDetection(), "unreadable or undecodable", True, None
-    # Use the globally available detector in this worker process
     try:
         if upscale_factor > 1 and not rescale_and_gamma:
             im = cv2.resize(im, None, fx=upscale_factor, fy=upscale_factor, interpolation=cv2.INTER_CUBIC)
@@ -457,8 +424,7 @@ class AbstractTarget(ABC):
         self, file: Path, cam_names, draw=False, n_lim=None,
         camera: Camera = None, threads=12, upscale_factor: int = 1,
         rescale_and_gamma: bool = False, preprocessing_scale: float = 0.25,
-        preprocessing_gamma: float = 0.5,
-    ) -> TargetDetection:
+        preprocessing_gamma: float = 0.5) -> TargetDetection:
         """
         Notes: A function to detect the camera results in the image folder.
         generally a process wrapper around the previous function
@@ -542,19 +508,16 @@ class AbstractTarget(ABC):
 
         os.environ['Detection_PID'] = str(os.getpid())
 
-        # prepare arguments for the worker processes
         tasks = [(
             im_file, cam_name, idx, draw, camera, upscale_factor,
             rescale_and_gamma, preprocessing_scale, preprocessing_gamma,
         ) for idx, im_file in enumerate(im_locs)]
-        # use a Pool of worker processes.
         if not (processname := multiprocessing.current_process().name) == "MainProcess":
             logger.critical("Python multiprocessing attempted to start an infinite loop. Use the if __name__ == '__main__' idiom in your calling script to prevent this")
             raise RuntimeError()
 
         with multiprocessing.Pool(processes=threads, initializer=init_worker, initargs=(self.__class__, self.input_args)) as pool:
             results = pool.starmap(_process_image, tasks)
-        # add the detections from the results in the main process
         n_unreadable = 0
         n_detect_error = 0
         # A worker's warnings come back with its result rather than
