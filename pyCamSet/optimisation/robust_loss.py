@@ -62,6 +62,10 @@ def _transform(f: np.ndarray, loss: str, f_scale: float):
         scale = np.where(small, 1.0,
                          drho(z) * np.sqrt(z) / np.where(small, 1.0, root))
         residual = np.where(small, f, f_scale * np.sign(f) * root)
+    # A residual so large that z overflows has a row scale of 0 in the limit,
+    # for every loss here; leaving the NaN would poison the Jacobian instead.
+    # The residual itself stays infinite, so the solver rejects that step.
+    scale = np.where(np.isfinite(scale), scale, 0.0)
     return residual, scale
 
 

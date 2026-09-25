@@ -82,6 +82,19 @@ def test_schur_reaches_scipys_robust_minimum(loss):
     assert abs(ours.x[1] - 0.5) < abs(plain.x[1] - 0.5)
 
 
+@pytest.mark.parametrize("loss", LOSSES)
+def test_an_overflowing_residual_scales_its_row_to_zero(loss):
+    """A residual far past any real pixel error must not put NaN in the Jacobian."""
+    r, scale = robust_loss._transform(np.array([1e200, -np.inf, 3.0]), loss, 1.0)
+    assert np.all(np.isfinite(scale))
+    assert scale[0] == 0.0 and scale[1] == 0.0 and scale[2] > 0.0
+    if loss == "arctan":
+        # bounded: rho never exceeds pi/2, so even an infinite residual costs little
+        assert abs(r[1]) <= np.sqrt(np.pi / 2) + 1e-12
+    else:
+        assert not np.isfinite(r[1])  # the step that produced it is still rejected
+
+
 def test_unknown_losses_are_refused():
     assert robust_loss.is_supported("linear") and robust_loss.is_supported("soft_l1")
     assert not robust_loss.is_supported("tukey")
