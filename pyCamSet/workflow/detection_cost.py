@@ -964,5 +964,3 @@ def summarise(report: dict) -> str:
         "differs per machine, so the hash -- not a commit id -- is what says "
         "two runs measured the same code.")
     return "\n".join(lines) + "\n"
-
-

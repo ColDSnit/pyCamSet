@@ -415,5 +415,3 @@ def test_phase4_provenance_accepts_identified_complete_run():
     )
     assert gate["status"] == "complete"
     assert gate["phase3_provenance_complete"]
-
-
