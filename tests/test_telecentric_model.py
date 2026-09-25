@@ -1133,3 +1133,19 @@ def test_the_gauge_transform_leaves_a_telecentric_projection_alone(
         "magnification should carry the gauge scale for a telecentric lens"
     assert np.allclose(np.asarray(new_proj)[:, 1], proj[:, 1]), \
         "there is no in-plane shift left for the principal point to absorb"
+
+
+@pytest.mark.parametrize("declared,spacing,expected", [
+    (2.0, 2.0, 2.0),        # declared in point_data's own units, above 1: kept as is
+    (0.02, 0.02, 0.02),     # the same, in metres
+    (10.0, 0.01, 0.01),     # declared in mm, points in metres: the measured spacing
+])
+def test_the_gauge_reads_the_square_size_in_point_data_units(declared, spacing, expected):
+    """Only a declaration in other units than the points is replaced."""
+    from types import SimpleNamespace
+
+    from pyCamSet.optimisation.standard_bundle_handler import _gauge_square_size
+
+    grid = np.array([[x, y, 0.0] for y in range(4) for x in range(4)], dtype=float) * spacing
+    target = SimpleNamespace(square_size=declared, point_data=grid)
+    assert _gauge_square_size(target) == pytest.approx(expected)

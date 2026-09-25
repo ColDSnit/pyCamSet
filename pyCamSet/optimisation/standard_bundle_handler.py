@@ -100,8 +100,10 @@ def _gauge_square_size(target) -> float:
         adjacent = adjacent[np.isfinite(adjacent) & (adjacent > 1e-12)]
         if adjacent.size:
             candidate = float(np.min(adjacent))
-            if not np.isfinite(declared) or not np.isclose(candidate, declared, rtol=0.1):
-                return candidate
+            if np.isfinite(declared) and np.isclose(candidate, declared, rtol=0.1):
+                # already in point_data's units: a target with no mismatch
+                return declared
+            return candidate
     if np.isfinite(declared) and declared > 1.0:
         return declared / 1000.0
     return declared
