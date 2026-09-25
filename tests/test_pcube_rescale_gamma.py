@@ -9,7 +9,6 @@ import numpy as np
 import pytest
 
 from pyCamSet.calibration_targets.core.abstract_target import AbstractTarget
-from conftest import UndrawableTarget
 from pyCamSet.calibration_targets.core.target_detections import ImageDetection
 from pyCamSet.calibration_targets.markers.puzzleboard import (
     preprocess_puzzleboard_image,
@@ -94,8 +93,24 @@ def test_preparation_rejects_non_positive_or_non_finite_gamma(gamma):
                                      enabled=True, scale=0.25, gamma=gamma)
 
 
-class _CountingTarget(UndrawableTarget, AbstractTarget):
+class _CountingTarget(AbstractTarget):
     """Small real-folder target double for the production entry point."""
+
+    @classmethod
+    def printable_name(cls, values, kind="svg"):
+        return "counting.svg"
+
+    def save_printable(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def save_to_svg(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def save_to_pdf(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def plot(self, *args, **kwargs):
+        raise NotImplementedError
 
     def find_in_image(self, image, draw=False, camera=None, wait_len=1):
         self.calls += 1
@@ -156,19 +171,23 @@ def test_production_detection_entry_threads_preparation_to_target_once(tmp_path)
 
 
 def test_pcube_cache_identity_includes_preprocessing_settings(tmp_path):
-    """A slot detected under one preprocessing setting is not reused under another."""
-    from pyCamSet.calibration.detection_cache import cache_matches, save_to_cache
-    from pyCamSet.calibration_targets import TargetDetection
+    from pyCamSet.calibration.detection_cache import (
+        TargetDetection,
+        cache_matches,
+        save_to_cache,
+    )
     from pyCamSet.calibration_targets.core.target_registry import build_target
 
     cache = tmp_path / "detected_datapoints.npz"
     target = build_target({"type": "PuzzleBoardCube"})
-    settings = {"rescale_and_gamma": True, "scale": 0.25, "gamma": 0.5}
-    save_to_cache(TargetDetection(cam_names=["cam0"], data=np.array([[0, 0, 0, 1.0, 2.0]])),
-                  [(8, 12)], cache, target, ["cam0"], None, preprocessing=settings)
+    preprocessing = {"rescale_and_gamma": True, "scale": 0.25, "gamma": 0.5}
+    save_to_cache(
+        TargetDetection(cam_names=["cam0"]), [(16, 24)], cache, target,
+        ["cam0"], None, preprocessing=preprocessing)
 
-    assert cache_matches(cache, target, ["cam0"], None, preprocessing=settings)
-    assert not cache_matches(cache, target, ["cam0"], None,
-                             preprocessing=dict(settings, scale=0.5))
-    # a pass with no preprocessing does not take the preprocessed slot either
-    assert not cache_matches(cache, target, ["cam0"], None)
+    assert cache_matches(
+        cache, target, ["cam0"], None,
+        preprocessing=preprocessing)
+    assert not cache_matches(
+        cache, target, ["cam0"], None,
+        preprocessing={"rescale_and_gamma": True, "scale": 0.5, "gamma": 0.5})

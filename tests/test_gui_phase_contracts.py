@@ -11,6 +11,8 @@ Every test here needs the GUI toolkit, so every test here is marked
 
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import pytest
 
@@ -348,7 +350,9 @@ def test_a_whole_calibration_runs_from_the_window(session_data_dir, tmp_path,
     images.mkdir()
     for camera in sorted((session_data_dir / "calibration_charuco").iterdir()):
         if camera.is_dir():
-            (images / camera.name).symlink_to(camera, target_is_directory=True)
+            # Copy rather than require Windows' ``create symbolic links``
+            # privilege; the workflow writes only beside these copies.
+            shutil.copytree(camera, images / camera.name)
 
     refused: list[str] = []
     for name in ("critical", "warning"):
@@ -2091,15 +2095,18 @@ def test_every_target_label_names_a_registered_target():
 
 @pytest.mark.gui
 def test_pcube_is_a_presentation_label_but_specs_keep_the_registry_name():
-    """The registry name is what a saved spec carries; ``pcube`` is only
-    ever what the combo shows for it."""
+    from PySide6.QtWidgets import QApplication
 
     from pyCamSet.calibration_targets.core.target_registry import target_label
 
+    QApplication.instance() or QApplication([])
     form = _target_form("PuzzleBoardCube")
-    assert target_label("PuzzleBoardCube") == "pcube"
-    assert form._target_combo.currentText() == "pcube"
-    assert form.spec()["type"] == "PuzzleBoardCube"
+    try:
+        assert target_label("PuzzleBoardCube") == "pcube"
+        assert form._target_combo.currentText() == "pcube"
+        assert form.spec()["type"] == "PuzzleBoardCube"
+    finally:
+        form.deleteLater()
 
 
 @pytest.mark.gui

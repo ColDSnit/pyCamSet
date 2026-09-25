@@ -417,7 +417,8 @@ def detect_datapoints_in_imfile(
 
     if caching:
         save_to_cache(detected, cam_res, cache_path, calibration_target,
-                      cam_names, n_lim, camset, preprocessing=preprocessing)
+                      cam_names, n_lim, camset,
+                      preprocessing=preprocessing)
     return detected, cam_res
 
 

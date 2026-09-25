@@ -72,9 +72,9 @@ def detection_cache_name(calibration_target, camset: Any | None = None,
 
 
 def _target_identity(calibration_target, cam_names: list[str],
-                      n_lim: int | None,
-                      camset: Any | None = None,
-                      preprocessing: dict | None = None) -> dict | None:
+                     n_lim: int | None,
+                     camset: Any | None = None,
+                     preprocessing: dict | None = None) -> dict | None:
     """The identity a detection cache is checked against.
 
     None -- always a miss, and nothing written -- for a detection biased by
@@ -112,8 +112,9 @@ def _open_cache(cache_path: Path, calibration_target, cam_names: list[str],
 
     :return: ``(archive, meta)``, which the caller must close, or None
     """
-    identity = _target_identity(calibration_target, cam_names, n_lim,
-                                camset=camset, preprocessing=preprocessing)
+    identity = _target_identity(
+        calibration_target, cam_names, n_lim, camset=camset,
+        preprocessing=preprocessing)
     if identity is None:
         return None
     try:
@@ -143,8 +144,9 @@ def cache_matches(cache_path: Path, calibration_target, cam_names: list[str],
     Reads the file's identity alone, for a caller deciding about a cache
     rather than reading one.
     """
-    opened = _open_cache(cache_path, calibration_target, cam_names, n_lim,
-                        camset, preprocessing=preprocessing)
+    opened = _open_cache(
+        cache_path, calibration_target, cam_names, n_lim, camset,
+        preprocessing=preprocessing)
     if opened is None:
         return False
     opened[0].close()
@@ -163,8 +165,9 @@ def load_verified_cache(cache_path: Path, calibration_target,
     :return: ``(detected, cam_res)``, or ``None`` for anything
         :func:`cache_matches` calls a miss
     """
-    opened = _open_cache(cache_path, calibration_target, cam_names, n_lim,
-                        camset, preprocessing=preprocessing)
+    opened = _open_cache(
+        cache_path, calibration_target, cam_names, n_lim, camset,
+        preprocessing=preprocessing)
     if opened is None:
         return None
     archive, meta = opened
@@ -191,8 +194,9 @@ def save_to_cache(detected: TargetDetection, cam_res: list[tuple],
     version or the other. A failure is logged rather than raised, and an
     unconfirmable identity (see :func:`_target_identity`) writes nothing.
     """
-    identity = _target_identity(calibration_target, cam_names, n_lim,
-                                camset=camset, preprocessing=preprocessing)
+    identity = _target_identity(
+        calibration_target, cam_names, n_lim, camset=camset,
+        preprocessing=preprocessing)
     if identity is None:
         return
     names, data, max_ims = detected.as_arrays()
