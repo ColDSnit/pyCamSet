@@ -162,12 +162,32 @@ The implementation adds:
 - GUI run/cancel/retry status handling and quality-gate presentation.
 - non-linear loss handling that cannot silently fall through the custom Schur
   path; SciPy trust-region receives the requested loss and scale.
-  Superseded on 2026-09-25: the Schur solver now honours SciPy's named robust
-  losses itself (`pyCamSet/optimisation/robust_loss.py`), so a robust Phase 4
-  stays on it; the trust-region fallback remains for the cases
-  `can_use_schur` rejects, and its warning now always gives the reason.
-- Robust-loss solver routing regression: passed; the custom Schur path is not
-  used when `loss` is non-linear.
+  Superseded since: the Schur solver now honours SciPy's named robust losses
+  itself (`pyCamSet/optimisation/robust_loss.py`), so a robust Phase 4 stays
+  on it; the trust-region fallback remains for the cases `can_use_schur`
+  rejects, and its warning always gives the reason.
+
+The missing-image gate and initial-error fallback each have regression tests.
+
+## Verification
+
+- Phase 4 contract: 9 passed.
+- Workflow backend seam and phase tests plus Phase 4 contract: 155 passed.
+- GUI phase contracts (offscreen): 95 passed.
+- Bundle-handler tests: 43 passed, 13 pre-existing numerical/plot warnings.
+- `py_compile`: passed for all changed Python files.
+- `git diff --check`: passed.
+- Mutation test: solver-success guard killed; missing-image guard killed; restore
+  verified by the mutation harness.
+- Fixed-camera warm-start regression: passed; the real telecentric lock probes
+  completed for extrinsics, intrinsics, and both together.
+- Camera-drift regression: passed; Phase 4 now clones geometry-only Camera
+  objects, uses `set_extrinsic`, and preserves the Phase 3 rig for comparison.
+- Saved GOOD-run drift recomputation: passed; both runs produce the same camera
+  parameter arrays, while their serialised camset files have distinct hashes.
+- Robust-loss solver routing regression: passed at the time; it asserted the
+  custom Schur path was not used for a non-linear loss. It now asserts the
+  opposite (`test_robust_loss_runs_on_the_schur_solver`), per the note above.
 - Real r_nebula runner: exit 0; quality disposition `incomplete` as reported above.
 - Real M_NEBULA telecentric runner: exit 0 at `max_nfev=100`; quality disposition
   `incomplete` because the final mean error increased despite objective-cost
