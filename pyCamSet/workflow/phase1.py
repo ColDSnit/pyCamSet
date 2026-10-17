@@ -98,6 +98,12 @@ def run(params: dict,
             error = str(exc)
             diagnostics["error"] = error
 
+    # Imported here, not at module level: the grid-board module loads OpenCV's
+    # aruco bindings, which this workflow module otherwise leaves lazy.
+    from pyCamSet.calibration_targets.markers.aruco2_gridboard import (
+        opencv_charuco_pixel_convention,
+    )
+
     run_id = make_run_id()
     # Validation reports are normally dictionaries, but the backend seam also
     # accepts report-like objects.  Keep status persistence independent of the
@@ -117,6 +123,10 @@ def run(params: dict,
         ),
         "params": params,
         "coordinate_mapping": COORDINATE_MAPPING,
+        # The convention ChArUco-family corners were read in (pixel-corner on
+        # OpenCV 4.x, pixel-centre from 5); PuzzleBoard points are always
+        # pixel-centre.
+        "pixel_convention": opencv_charuco_pixel_convention(),
         "diagnostics": diagnostics,
         "report": report,
         "error": error,

@@ -175,6 +175,17 @@ def opencv_charuco_pixel_offset(version: str | None = None) -> float:
     return 0.0 if major >= 5 else 0.5
 
 
+def opencv_charuco_pixel_convention(version: str | None = None) -> str:
+    """
+    The name of the convention ChArUco-family corners are reported in under
+    the installed (or named) OpenCV: ``"pixel-centre"`` when
+    :func:`opencv_charuco_pixel_offset` is 0, ``"pixel-corner"`` when it is
+    0.5. Recorded with detections, so corners read under one convention are
+    never mixed with corners read under the other.
+    """
+    return "pixel-centre" if opencv_charuco_pixel_offset(version) == 0.0 else "pixel-corner"
+
+
 def _edge_margin() -> int:
     """
     How far inside the image a returned corner must lie, in pixels.
