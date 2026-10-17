@@ -138,25 +138,7 @@ def legacy_mapping_shift(scale: float) -> float:
     return 0.5 / float(scale) - 0.5
 
 
-def _corner_pixel_offset(target) -> float:
-    """
-    How far *target*'s reported points sit from the pixel-centre convention.
-
-    A ChArUco-family target (ChArUco, Ccube, CIco and their aruco2 grid-board
-    twins) reports corners in the installed OpenCV's ChArUco convention,
-    0.5 px further on under OpenCV 4.x
-    (:func:`~pyCamSet.calibration_targets.markers.aruco2_gridboard.opencv_charuco_pixel_offset`);
-    a PuzzleBoard target's points are pixel-centre under every version.
-    """
-    from pyCamSet.calibration_targets.markers.puzzleboard import PUZZLEBOARD_DETECTOR
-    if PUZZLEBOARD_DETECTOR in (getattr(type(target), "DETECTOR_BACKENDS", None) or {}).values():
-        return 0.0
-    from pyCamSet.calibration_targets.markers.aruco2_gridboard import opencv_charuco_pixel_offset
-    return float(opencv_charuco_pixel_offset())
-
-
-def _restore_native_coordinates(detection: ImageDetection, scale: float,
-                                offset: float = 0.0) -> ImageDetection:
+def _restore_native_coordinates(detection: ImageDetection, scale: float) -> ImageDetection:
     """Map detector points back to native pixels without changing point IDs.
 
     ``cv2.resize`` with ``fx=fy=scale`` aligns pixel centres, not pixel
@@ -164,16 +146,13 @@ def _restore_native_coordinates(detection: ImageDetection, scale: float,
     Dividing by the scale alone would shift every point by
     ``0.5 / scale - 0.5`` native pixels (-1.5 px at the default 0.25).
 
-    The rule holds in the pixel-centre convention, so points reported
-    *offset* pixels from it (ChArUco corners under OpenCV 4.x, see
-    :func:`_corner_pixel_offset`) are mapped in their own convention:
-    ``(u - offset + 0.5) / scale - 0.5 + offset``. Without that a 4.x corner
-    keeps a bias of ``offset * (1 / scale - 1)``.
+    The rule holds in the pixel-centre frame, which every target's points
+    are returned in whichever OpenCV is installed.
     """
     if scale == 1.0 or not detection.has_data:
         return detection
     points = np.asarray(detection.image_points, dtype=np.float64)
-    detection.image_points = (points - offset + 0.5) / scale - 0.5 + offset
+    detection.image_points = (points + 0.5) / scale - 0.5
     return detection
 
 
@@ -209,8 +188,7 @@ def _process_image(
             preprocessing_scale=preprocessing_scale,
             preprocessing_gamma=preprocessing_gamma)
         detection = worker_detector.find_in_image(im, draw=draw, camera=camera)
-        detection = _restore_native_coordinates(
-            detection, preparation_scale, _corner_pixel_offset(worker_detector))
+        detection = _restore_native_coordinates(detection, preparation_scale)
     except (cv2.error, ValueError) as exc:
         if isinstance(exc, ValueError) and not _looks_like_native_opencv_error(exc):
             raise
@@ -545,8 +523,7 @@ class AbstractTarget(ABC):
                         preprocessing_scale=preprocessing_scale,
                         preprocessing_gamma=preprocessing_gamma)
                     detection = self.find_in_image(im, draw=draw, camera=camera)
-                    detection = _restore_native_coordinates(
-                        detection, preparation_scale, _corner_pixel_offset(self))
+                    detection = _restore_native_coordinates(detection, preparation_scale)
                 except (cv2.error, ValueError) as exc:
                     if isinstance(exc, ValueError) and not _looks_like_native_opencv_error(exc):
                         raise

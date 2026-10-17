@@ -30,7 +30,7 @@ from pyCamSet.calibration_targets.markers.aruco2 import CHARUCO_SEED_REVISION
 from pyCamSet.calibration_targets.markers.aruco2_gridboard import (
     CHARUCO2_DETECTOR,
     GRID_BOARD_CORNER_REVISION,
-    opencv_charuco_pixel_convention,
+    PIXEL_CONVENTION,
 )
 from pyCamSet.calibration_targets.markers.puzzleboard import (
     PUZZLEBOARD_DETECTOR,
@@ -114,11 +114,11 @@ def _target_identity(calibration_target, cam_names: list[str],
         # cache written before the current revision is a miss.
         identity["puzzleboard_keys"] = PUZZLEBOARD_KEY_REVISION
     else:
-        # A ChArUco-family target: its corners are reported in the installed
-        # OpenCV's ChArUco convention (pixel-corner on 4.x, pixel-centre from
-        # 5), so a cache written under the other one is a miss rather than a
-        # silent 0.5 px shift.
-        identity["pixel_convention"] = opencv_charuco_pixel_convention()
+        # A ChArUco-family target: its corners are pixel-centre whichever
+        # OpenCV is installed. A cache that recorded 'pixel-corner' (written
+        # under OpenCV 4.x before that was so) is a miss rather than a silent
+        # 0.5 px shift.
+        identity["pixel_convention"] = PIXEL_CONVENTION
     if preprocessing is not None:
         identity["preprocessing"] = dict(preprocessing)
         # Version of the detector-to-native coordinate mapping: caches written

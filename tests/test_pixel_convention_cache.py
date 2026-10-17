@@ -1,12 +1,14 @@
 """
-ChArUco-family corners are recorded with the pixel convention they were read in.
+Every detector's points are recorded in the one pixel frame they are returned in.
 
-OpenCV 4.x reports ChArUco corners 0.5 px further on than OpenCV 5 (the
-pixel-corner rather than the pixel-centre convention).  A detection cache
-written under one must therefore be a miss under the other, and a detection
-read from a resized image must be mapped back in its own convention, or a 4.x
-corner keeps a bias of ``0.5 * (1 / scale - 1)``.
+All targets return points in the pixel-centre frame (integer coordinates are
+pixel centres) whichever OpenCV is installed.  Detection caches written before
+that, under OpenCV 4.x, recorded ChArUco-family corners as 'pixel-corner'
+(half a pixel further on); such a cache must be a miss.  A detection read from
+a resized image is mapped back by the plain pixel-centre rule.
 """
+import json
+
 import numpy as np
 import pytest
 
@@ -14,60 +16,84 @@ import pyCamSet.calibration.detection_cache as cache_module
 from pyCamSet.calibration_targets import ImageDetection, TargetDetection
 from pyCamSet.calibration_targets.core import abstract_target
 from pyCamSet.calibration_targets.core.target_registry import build_target
-from pyCamSet.calibration_targets.markers import aruco2_gridboard
+from pyCamSet.calibration_targets.markers import aruco2_gridboard, aruco_opencv
 
 
-def _write_cache(tmp_path, spec, offset):
+def _write_cache(tmp_path, spec):
     target = build_target(spec)
     path = tmp_path / "detected_datapoints.npz"
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(aruco2_gridboard, "opencv_charuco_pixel_offset", lambda version=None: offset)
-        cache_module.save_to_cache(
-            TargetDetection(cam_names=["cam0"], data=np.array([[0, 0, 0, 1.0, 2.0]])),
-            [(8, 12)], path, target, ["cam0"], None)
+    cache_module.save_to_cache(
+        TargetDetection(cam_names=["cam0"], data=np.array([[0, 0, 0, 1.0, 2.0]])),
+        [(8, 12)], path, target, ["cam0"], None)
     return target, path
 
 
-def _matches(path, target, offset):
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(aruco2_gridboard, "opencv_charuco_pixel_offset", lambda version=None: offset)
-        return cache_module.cache_matches(path, target, ["cam0"], None)
+def _recorded_identity(path):
+    with np.load(path, allow_pickle=False) as archive:
+        return json.loads(str(archive["identity"]))
 
 
-@pytest.mark.parametrize("spec", [
+def _rewrite_identity(path, identity):
+    """The same cache with *identity* in place of its own, as an older pyCamSet would have written it."""
+    with np.load(path, allow_pickle=False) as archive:
+        members = {name: archive[name] for name in archive.files}
+    members["identity"] = np.array(json.dumps(identity, sort_keys=True))
+    with open(path, "wb") as fh:
+        np.savez(fh, **members)
+
+
+CHARUCO_FAMILY = [
     {"type": "ChArUco", "marker_backend": "aruco1"},
     {"type": "ChArUco", "marker_backend": "aruco2"},
     {"type": "Ccube", "marker_backend": "aruco2"},
     {"type": "ChArUco2"},
-], ids=["ChArUco-aruco1", "ChArUco-aruco2", "Ccube-aruco2", "ChArUco2"])
-def test_a_cache_from_the_other_convention_is_a_miss(tmp_path, spec):
-    target, path = _write_cache(tmp_path, spec, 0.5)   # written under OpenCV 4.x
-    assert _matches(path, target, 0.0) is False         # read under OpenCV 5
-    assert _matches(path, target, 0.5) is True
+]
+CHARUCO_FAMILY_IDS = ["ChArUco-aruco1", "ChArUco-aruco2", "Ccube-aruco2", "ChArUco2"]
 
 
-def test_a_puzzleboard_cache_does_not_depend_on_the_convention(tmp_path):
-    target, path = _write_cache(tmp_path, {"type": "PuzzleBoard"}, 0.5)
-    assert _matches(path, target, 0.0) is True
+def test_the_frame_is_pixel_centre():
+    assert aruco_opencv.PIXEL_CONVENTION == "pixel-centre"
+    assert aruco2_gridboard.PIXEL_CONVENTION == "pixel-centre"
 
 
-def test_convention_names():
-    assert aruco2_gridboard.opencv_charuco_pixel_convention("5.0.0") == "pixel-centre"
-    assert aruco2_gridboard.opencv_charuco_pixel_convention("4.11.0") == "pixel-corner"
+@pytest.mark.parametrize("spec", CHARUCO_FAMILY, ids=CHARUCO_FAMILY_IDS)
+def test_a_cache_records_pixel_centre_and_matches(tmp_path, spec):
+    target, path = _write_cache(tmp_path, spec)
+    assert _recorded_identity(path)["pixel_convention"] == "pixel-centre"
+    assert cache_module.cache_matches(path, target, ["cam0"], None) is True
 
 
-@pytest.mark.parametrize("offset", [0.0, 0.5])
+@pytest.mark.parametrize("spec", CHARUCO_FAMILY, ids=CHARUCO_FAMILY_IDS)
+def test_a_pixel_corner_cache_is_a_miss(tmp_path, spec):
+    target, path = _write_cache(tmp_path, spec)
+    identity = _recorded_identity(path)
+    identity["pixel_convention"] = "pixel-corner"  # what OpenCV 4.x wrote before the frame was fixed
+    _rewrite_identity(path, identity)
+    assert cache_module.cache_matches(path, target, ["cam0"], None) is False
+
+
+def test_a_puzzleboard_cache_records_no_convention(tmp_path):
+    target, path = _write_cache(tmp_path, {"type": "PuzzleBoard"})
+    assert "pixel_convention" not in _recorded_identity(path)
+    assert cache_module.cache_matches(path, target, ["cam0"], None) is True
+
+
+@pytest.mark.parametrize("version, offset", [("4.11.0", 0.5), ("4.13.0", 0.5), ("5.0.0", 0.0)])
+def test_detectboard_corners_are_moved_to_pixel_centre(version, offset):
+    native = np.array([[[10.5, 20.5]], [[123.75, 7.5]]], dtype=np.float32)  # as detectBoard returns them
+    moved = aruco_opencv.charuco_corners_to_pixel_centre(native, version)
+    if offset == 0.0:
+        assert moved is native                                       # untouched where OpenCV is already there
+    else:
+        assert moved.dtype == np.float32 and moved.shape == native.shape
+        np.testing.assert_array_equal(moved, native - np.float32(offset))
+    assert aruco_opencv.charuco_corners_to_pixel_centre(None, version) is None
+
+
 @pytest.mark.parametrize("scale", [0.25, 0.5, 1.5])
-def test_the_scaled_restore_maps_in_the_points_own_convention(offset, scale):
+def test_the_scaled_restore_is_the_pixel_centre_rule(scale):
     centre = np.array([[10.0, 20.0], [123.25, 7.5]])               # native, pixel-centre
     scaled_centre = (centre + 0.5) * scale - 0.5                     # where the resize puts them
-    reported = ImageDetection(np.array([0, 1]), scaled_centre + offset)  # as the detector reports them
-    restored = abstract_target._restore_native_coordinates(reported, scale, offset)
-    np.testing.assert_allclose(restored.image_points, centre + offset, atol=1e-12)
-
-
-def test_the_offset_follows_the_target(monkeypatch):
-    monkeypatch.setattr(aruco2_gridboard, "opencv_charuco_pixel_offset", lambda version=None: 0.5)
-    assert abstract_target._corner_pixel_offset(build_target({"type": "ChArUco"})) == 0.5
-    assert abstract_target._corner_pixel_offset(build_target({"type": "ChArUco2"})) == 0.5
-    assert abstract_target._corner_pixel_offset(build_target({"type": "PuzzleBoard"})) == 0.0
+    restored = abstract_target._restore_native_coordinates(
+        ImageDetection(np.array([0, 1]), scaled_centre), scale)
+    np.testing.assert_allclose(restored.image_points, centre, atol=1e-12)
